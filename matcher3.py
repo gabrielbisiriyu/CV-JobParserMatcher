@@ -12,9 +12,9 @@ THIS IS A TEST MATCHER FROM matcher.py WITH A LITTLE TWEAK IN THE EXPERIENCE SEC
 
 
 class CVJobMatcher:
-    def __init__(self, model_name='cv_jd_finetuned_model2'):
+    def __init__(self, model_name='ennygaebs/cv-job-matcher'):
         self.model = SentenceTransformer(model_name)
-
+        
     def _split_into_sentences(self, text):
         # Simple sentence splitter
         sentences = re.split(r'(?<=[.!?])\s+', text)
