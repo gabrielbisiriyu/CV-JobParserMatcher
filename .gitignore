@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+
+.venv/
+.env/
+main2.py
+test.py
+test2.py
+test4.py
+test5.py
+extractor_job.py
+extractor_resume.py
+matcher.py
+matcher2.py
+mainBackup.py
+.env
+/linkedin
+/jobs
+/it
+PG VECTOR + POSTGRESQL.txt
+cv_jd_finetuned_model2
