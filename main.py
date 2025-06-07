@@ -21,7 +21,7 @@ import torch
 # Load OpenAI key from environment variable (or fallback)
 #OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "mock-key")
 
-matcher = CVJobMatcher(model_name='cv_jd_finetuned_model2')
+matcher = CVJobMatcher(model_name='ennygaebs/cv-job-matcher')
 
 
 app = FastAPI()
