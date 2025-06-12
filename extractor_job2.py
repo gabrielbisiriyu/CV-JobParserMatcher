@@ -43,6 +43,7 @@ class CompanyDetails(BaseModel):
 
 class JobInfo(BaseModel):
     companyInfo: list[CompanyDetails]
+    jobTitle: str
     requiredSkills: list[str]
     roles_or_responsibilities: list[str]
     

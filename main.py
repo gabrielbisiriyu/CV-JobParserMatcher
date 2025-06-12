@@ -1,5 +1,5 @@
 
-from fastapi import FastAPI, UploadFile, File, HTTPException,Query
+from fastapi import FastAPI, UploadFile, File, HTTPException,Query, Form
 import tempfile
 from extractor_resume2 import ResumeExtractor, extract_text_cv
 from extractor_job2 import JobPostingExtractor, extract_text_job
@@ -15,20 +15,20 @@ from models import ParsedCV, ParsedJob
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 import torch
-
+from sqlalchemy import select, update, func
+from uuid import UUID
 
 
 # Load OpenAI key from environment variable (or fallback)
 #OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "mock-key")
 
-matcher = CVJobMatcher(model_name='ennygaebs/cv-job-matcher')
-
+#matcher = CVJobMatcher(model_name='cv_jd_finetuned_model2')
+matcher = CVJobMatcher()
 
 app = FastAPI()
 
 @app.post("/parse_cv/")
-async def parse_cv(file: UploadFile = File(...)):
-    # Save uploaded file to a temporary file
+async def parse_cv(user_id: str = Form(...), file: UploadFile = File(...)):
     suffix = Path(file.filename).suffix
     if suffix not in [".pdf", ".docx"]:
         raise HTTPException(status_code=400, detail="Unsupported file type. Only .pdf and .docx allowed.")
@@ -40,38 +40,51 @@ async def parse_cv(file: UploadFile = File(...)):
     try:
         extractor = ResumeExtractor()
         text_cv = extract_text_cv(tmp_path)
-        text_cv_hash = hashlib.sha256(text_cv.encode('utf-8')).hexdigest()
-        data_cv =extractor.extract_all(text_cv)
+        text_cv_hash = hashlib.sha256(text_cv.encode("utf-8")).hexdigest()
+        data_cv = extractor.extract_all(text_cv)
 
-        
+        # Process experience
         contextual_experience = []
         for exp in data_cv["experience"]:
             if isinstance(exp, dict):
                 exp_data = f"{exp.get('job_title', 'Unknown')} at {exp.get('company', 'Unknown')}: {exp.get('responsibilities', '')}"
                 contextual_experience.append(exp_data)
-            else:
-                print(f"⚠️ Skipping malformed experience entry: {exp}")
 
-        exp_text = ' '.join(contextual_experience)
+        exp_text = " ".join(contextual_experience)
         skill_list = data_cv["skills"]
-        cv_emb,skill_emb,exp_emb = matcher.cv_DOCnFIELD_level_embeddings(text_cv,skill_list,exp_text)
-        #embeddings_cv = {"cv_emb":cv_emb, "skill_emb":skill_emb,"exp_emb":exp_emb} 
-             
-        #  TODO: store to database (we'll do that in next step)
+        cv_emb, skill_emb, exp_emb = matcher.cv_DOCnFIELD_level_embeddings(text_cv, skill_list, exp_text)
+
         async with SessionLocal() as session:
-            try:
+            # 🔍 Check if user already has a CV
+            result = await session.execute(select(ParsedCV).where(ParsedCV.user_id == user_id))
+            existing_cv = result.scalar_one_or_none()
+
+            if existing_cv:
+                # 🔁 Update existing CV
+                await session.execute(
+                    update(ParsedCV)
+                    .where(ParsedCV.user_id == user_id)
+                    .values(
+                        text_hash=text_cv_hash,
+                        parsed_fields=data_cv,
+                        cv_emb=cv_emb.tolist(),
+                        skill_emb=skill_emb.tolist(),
+                        exp_emb=exp_emb.tolist(),
+                    )
+                )
+            else:
+                # ➕ Insert new CV
                 cv_record = ParsedCV(
+                    user_id=user_id,
                     text_hash=text_cv_hash,
                     parsed_fields=data_cv,
                     cv_emb=cv_emb.tolist(),
                     skill_emb=skill_emb.tolist(),
-                    exp_emb=exp_emb.tolist()
+                    exp_emb=exp_emb.tolist(),
                 )
                 session.add(cv_record)
-                await session.commit()
-            except IntegrityError:
-                await session.rollback()
-                logging.warning("Duplicate CV detected. Skipping insert.")
+
+            await session.commit()
 
         return {
             "hash": text_cv_hash,
@@ -83,22 +96,17 @@ async def parse_cv(file: UploadFile = File(...)):
             }
         }
 
-        #return {"hash": text_hash, "parsed_cv": data}
-        #return {"hash": text_cv_hash, "parsed_cv": data_cv, "embeddings":embeddings_cv}
-    
     except Exception as e:
         logging.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Error parsing CV.")
-    
     finally:
         os.remove(tmp_path)
 
 @app.post("/parse_job/")
-async def parse_job(file: UploadFile = File(...)):
-    # Save uploaded file to a temporary file
+async def parse_job(company_id: str = Form(...), file: UploadFile = File(...)):
     suffix = Path(file.filename).suffix
     if suffix not in [".pdf", ".docx", ".txt"]:
-        raise HTTPException(status_code=400, detail="Unsupported file type. Only .pdf and .docx allowed.")
+        raise HTTPException(status_code=400, detail="Unsupported file type. Only .pdf, .docx, .txt allowed.")
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(await file.read())
@@ -111,29 +119,36 @@ async def parse_job(file: UploadFile = File(...)):
         data_job = extractor.extract_job_info(text_job)
         r_skills = data_job["requiredSkills"]
         res_text = ' '.join(data_job["roles_or_responsibilities"])
-        jd_emb,req_skill_emb,role_emb = matcher.job_DOCnFIELD_level_embeddings(text_job,r_skills,res_text)
-        #embeddings_jd = {"cv_emb":jd_emb, "skill_emb":req_skill_emb,"exp_emb":role_emb} 
-
-        # 🟩 TODO: store to database (next)
+        jd_emb, req_skill_emb, role_emb = matcher.job_DOCnFIELD_level_embeddings(text_job, r_skills, res_text)
 
         async with SessionLocal() as session:
-            try:
-                job_record = ParsedJob(
-                    text_hash=text_job_hash,
-                    parsed_fields=data_job,
-                    cv_emb=jd_emb.tolist(),
-                    skill_emb=req_skill_emb.tolist(),
-                    exp_emb=role_emb.tolist()
-                )
-                session.add(job_record)
-                await session.commit()
-            except IntegrityError:
-                await session.rollback()
-                logging.warning("Duplicate Job detected. Skipping insert.")
+            # 🔐 Enforce 10 jobs per company
+            count_query = await session.execute(
+                func.count().select().where(ParsedJob.company_id == company_id)
+            )
+            job_count = count_query.scalar()
+
+            if job_count >= 2:
+                raise HTTPException(status_code=403, detail="Job limit reached (10). Delete old ones to add more.")
+
+            job_record = ParsedJob(
+                company_id=company_id,
+                text_hash=text_job_hash,
+                job_text=text_job,
+                parsed_fields=data_job,
+                cv_emb=jd_emb.tolist(),
+                skill_emb=req_skill_emb.tolist(),
+                exp_emb=role_emb.tolist()
+            )
+            session.add(job_record)
+            await session.commit()
+            job_id = str(job_record.id)
 
         return {
+            "job_id": job_id,
             "hash": text_job_hash,
             "parsed_job": data_job,
+            "job_text": text_job,
             "embeddings": {
                 "cv_emb": jd_emb.tolist(),
                 "skill_emb": req_skill_emb.tolist(),
@@ -141,14 +156,15 @@ async def parse_job(file: UploadFile = File(...)):
             }
         }
 
-        #return {"hash": text_job_hash, "parsed_job": data_job, "embeddings":embeddings_jd}
-    
+    except HTTPException as e:
+        # Allow FastAPI to return the proper status and message
+        raise e
+
     except Exception as e:
         logging.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Error parsing job post.")
-
     finally:
-        os.remove(tmp_path)   
+        os.remove(tmp_path)  
 
 
 
@@ -178,7 +194,8 @@ async def match_cv_to_jobs(cv_hash: str, top_n: int = Query(5, ge=1, le=50)):
                 "job_id": job.id,
                 "text_hash": job.text_hash,
                 "created_at": job.created_at,
-                "job_title": job.parsed_fields.get("companyInfo", {}),
+                #"job_title": job.parsed_fields.get("companyInfo", {}),
+                "job_title": job.parsed_fields.get("jobTitle", {}),
                 **score
             })
 
@@ -214,4 +231,51 @@ async def match_job_to_cvs(job_hash: str, top_n: int = Query(5, ge=1, le=50)):
             })
 
         results.sort(key=lambda x: -x["combined_score"])
-        return results[:top_n]
+        return results[:top_n]   
+    
+
+
+@app.delete("/delete_job/{job_id}")
+async def delete_job(job_id: UUID):
+    async with SessionLocal() as session:
+        result = await session.execute(select(ParsedJob).where(ParsedJob.id == job_id))
+        job = result.scalar_one_or_none()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        await session.delete(job)
+        await session.commit()
+        return {"detail": f"Job {job_id} deleted successfully"}   
+    
+
+
+@app.get("/jobs/company/{company_id}")
+async def get_company_jobs(company_id: str, limit: int = Query(5), offset: int = Query(0)):
+    async with SessionLocal() as session:
+        try:
+            result = await session.execute(
+                select(ParsedJob)
+                .where(ParsedJob.company_id == company_id)
+                .offset(offset)
+                .limit(limit)
+            )
+            jobs = result.scalars().all()
+
+            return {
+                "count": len(jobs),
+                "offset": offset,
+                "limit": limit,
+                "jobs": [
+                    {
+                        "id": str(job.id),
+                        "text_hash": job.text_hash,
+                        "parsed_fields": job.parsed_fields,
+                        "created_at": job.created_at,
+                    }
+                    for job in jobs
+                ]
+            }
+
+        except Exception as e:
+            logging.error(traceback.format_exc())
+            raise HTTPException(status_code=500, detail="Error retrieving job posts.")
