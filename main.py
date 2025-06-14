@@ -1,5 +1,4 @@
-
-from fastapi import FastAPI, UploadFile, File, HTTPException,Query, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form
 import tempfile
 from extractor_resume2 import ResumeExtractor, extract_text_cv
 from extractor_job2 import JobPostingExtractor, extract_text_job
@@ -13,22 +12,27 @@ from matcher3 import CVJobMatcher
 from db import SessionLocal
 from models import ParsedCV, ParsedJob
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import select
-import torch
 from sqlalchemy import select, update, func
 from uuid import UUID
+import torch
 
-
-# Load OpenAI key from environment variable (or fallback)
-#OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "mock-key")
-
-#matcher = CVJobMatcher(model_name='cv_jd_finetuned_model2')
-matcher = CVJobMatcher()
+#  GLOBAL matcher variable, not instantiated yet
+matcher = None
 
 app = FastAPI()
 
+#  INIT matcher ONCE when app starts
+@app.on_event("startup")
+def load_matcher():
+    global matcher
+    matcher = CVJobMatcher()  # Loaded only once at startup
+    print("🧠 CVJobMatcher loaded globally on startup")
+
+
+
 @app.post("/parse_cv/")
 async def parse_cv(user_id: str = Form(...), file: UploadFile = File(...)):
+    global matcher  # ⬅️ Use the global instance
     suffix = Path(file.filename).suffix
     if suffix not in [".pdf", ".docx"]:
         raise HTTPException(status_code=400, detail="Unsupported file type. Only .pdf and .docx allowed.")
@@ -55,12 +59,10 @@ async def parse_cv(user_id: str = Form(...), file: UploadFile = File(...)):
         cv_emb, skill_emb, exp_emb = matcher.cv_DOCnFIELD_level_embeddings(text_cv, skill_list, exp_text)
 
         async with SessionLocal() as session:
-            # 🔍 Check if user already has a CV
             result = await session.execute(select(ParsedCV).where(ParsedCV.user_id == user_id))
             existing_cv = result.scalar_one_or_none()
 
             if existing_cv:
-                # 🔁 Update existing CV
                 await session.execute(
                     update(ParsedCV)
                     .where(ParsedCV.user_id == user_id)
@@ -73,7 +75,6 @@ async def parse_cv(user_id: str = Form(...), file: UploadFile = File(...)):
                     )
                 )
             else:
-                # ➕ Insert new CV
                 cv_record = ParsedCV(
                     user_id=user_id,
                     text_hash=text_cv_hash,
@@ -102,8 +103,10 @@ async def parse_cv(user_id: str = Form(...), file: UploadFile = File(...)):
     finally:
         os.remove(tmp_path)
 
+
 @app.post("/parse_job/")
 async def parse_job(company_id: str = Form(...), file: UploadFile = File(...)):
+    global matcher  # ⬅️ Use the global instance
     suffix = Path(file.filename).suffix
     if suffix not in [".pdf", ".docx", ".txt"]:
         raise HTTPException(status_code=400, detail="Unsupported file type. Only .pdf, .docx, .txt allowed.")
@@ -122,7 +125,6 @@ async def parse_job(company_id: str = Form(...), file: UploadFile = File(...)):
         jd_emb, req_skill_emb, role_emb = matcher.job_DOCnFIELD_level_embeddings(text_job, r_skills, res_text)
 
         async with SessionLocal() as session:
-            # 🔐 Enforce 10 jobs per company
             count_query = await session.execute(
                 func.count().select().where(ParsedJob.company_id == company_id)
             )
@@ -157,19 +159,18 @@ async def parse_job(company_id: str = Form(...), file: UploadFile = File(...)):
         }
 
     except HTTPException as e:
-        # Allow FastAPI to return the proper status and message
         raise e
 
     except Exception as e:
         logging.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Error parsing job post.")
     finally:
-        os.remove(tmp_path)  
-
+        os.remove(tmp_path)
 
 
 @app.post("/match_cv_to_jobs/")
 async def match_cv_to_jobs(cv_hash: str, top_n: int = Query(5, ge=1, le=50)):
+    global matcher  # ⬅️ Use the global instance
     async with SessionLocal() as session:
         cv_row = await session.execute(select(ParsedCV).where(ParsedCV.text_hash == cv_hash))
         cv = cv_row.scalar_one_or_none()
@@ -194,7 +195,6 @@ async def match_cv_to_jobs(cv_hash: str, top_n: int = Query(5, ge=1, le=50)):
                 "job_id": job.id,
                 "text_hash": job.text_hash,
                 "created_at": job.created_at,
-                #"job_title": job.parsed_fields.get("companyInfo", {}),
                 "job_title": job.parsed_fields.get("jobTitle", {}),
                 **score
             })
@@ -202,8 +202,10 @@ async def match_cv_to_jobs(cv_hash: str, top_n: int = Query(5, ge=1, le=50)):
         results.sort(key=lambda x: -x["combined_score"])
         return results[:top_n]
 
+
 @app.post("/match_job_to_cvs/")
 async def match_job_to_cvs(job_hash: str, top_n: int = Query(5, ge=1, le=50)):
+    global matcher  # ⬅️ Use the global instance
     async with SessionLocal() as session:
         job_row = await session.execute(select(ParsedJob).where(ParsedJob.text_hash == job_hash))
         job = job_row.scalar_one_or_none()
@@ -231,8 +233,7 @@ async def match_job_to_cvs(job_hash: str, top_n: int = Query(5, ge=1, le=50)):
             })
 
         results.sort(key=lambda x: -x["combined_score"])
-        return results[:top_n]   
-    
+        return results[:top_n]
 
 
 @app.delete("/delete_job/{job_id}")
@@ -245,8 +246,7 @@ async def delete_job(job_id: UUID):
 
         await session.delete(job)
         await session.commit()
-        return {"detail": f"Job {job_id} deleted successfully"}   
-    
+        return {"detail": f"Job {job_id} deleted successfully"}
 
 
 @app.get("/jobs/company/{company_id}")
