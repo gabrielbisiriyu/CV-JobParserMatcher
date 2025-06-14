@@ -16,6 +16,7 @@ class CVJobMatcher:
         #model_name='cv_jd_finetuned_model2'
         #model_name='ennygaebs/cv-job-matcher'
         self.model = SentenceTransformer(model_name)
+        print(f"✅ Model '{model_name}' loaded.")
         
     def _split_into_sentences(self, text):
         # Simple sentence splitter
