@@ -74,6 +74,7 @@ async def parse_cv(user_id: str = Form(...), file: UploadFile = File(...)):
                 print("!!!! DUPLICATE !!!!!")
                 return  {
                     "hash": text_cv_hash,
+                    "cv_id":duplicate_cv.id,
                      "is_duplicate": True,
                     "parsed_cv": duplicate_cv.parsed_fields,
                     "embeddings": {
@@ -125,6 +126,7 @@ async def parse_cv(user_id: str = Form(...), file: UploadFile = File(...)):
 
         return {
             "hash": text_cv_hash,
+            "cv_id": str(existing_cv.id if existing_cv else cv_record.id),
             "parsed_cv": data_cv,
             "is_duplicate": False,
             "embeddings": {
