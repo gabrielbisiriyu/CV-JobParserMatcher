@@ -338,6 +338,7 @@ async def get_company_jobs(company_id: str, limit: int = Query(5), offset: int =
                     {
                         "id": str(job.id),
                         "text_hash": job.text_hash,
+                        "job_text": job.job_text,
                         "parsed_fields": job.parsed_fields,
                         "created_at": job.created_at,
                     }
