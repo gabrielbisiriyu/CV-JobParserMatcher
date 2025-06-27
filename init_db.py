@@ -4,7 +4,7 @@ import asyncio
 from db import engine, Base
 
 # ✅ Explicitly import models to register them with SQLAlchemy
-from models import ParsedCV, ParsedJob
+from models import ParsedCV, ParsedJob, JobApplication
 
 async def init_models():
     async with engine.begin() as conn:

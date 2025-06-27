@@ -10,7 +10,7 @@ import json
 import traceback
 from matcher3 import CVJobMatcher
 from db import SessionLocal
-from models import ParsedCV, ParsedJob
+from models import ParsedCV, ParsedJob, JobApplication
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select, update, func
 from uuid import UUID
@@ -350,4 +350,87 @@ async def get_company_jobs(company_id: str, limit: int = Query(5), offset: int =
 
         except Exception as e:
             logging.error(traceback.format_exc())
-            raise HTTPException(status_code=500, detail="Error retrieving job posts.")
+            raise HTTPException(status_code=500, detail="Error retrieving job posts.")  
+        
+
+
+@app.post("/apply_to_job/")
+async def apply_to_job(cv_id: UUID, job_id: UUID):
+    async with SessionLocal() as session:
+        # Check both exist
+        cv = await session.get(ParsedCV, cv_id)
+        job = await session.get(ParsedJob, job_id)
+        if not cv or not job:
+            raise HTTPException(status_code=404, detail="CV or Job not found")
+
+        # Check for duplicate
+        existing = await session.execute(
+            select(JobApplication).where(JobApplication.cv_id == cv_id, JobApplication.job_id == job_id)
+        )
+        if existing.scalar_one_or_none():
+            return {"detail": "Already applied to this job."}
+
+        application = JobApplication(cv_id=cv_id, job_id=job_id)
+        session.add(application)
+        await session.commit()
+        return {"detail": "Application submitted successfully"}     
+    
+
+
+@app.get("/rank_applicants/")
+async def rank_applicants(job_id: UUID, top_n: int = Query(5, ge=1, le=50)):
+    global matcher
+    async with SessionLocal() as session:
+        job = await session.get(ParsedJob, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        app_rows = await session.execute(
+            select(ParsedCV)
+            .join(JobApplication, ParsedCV.id == JobApplication.cv_id)
+            .where(JobApplication.job_id == job_id)
+        )
+        applied_cvs = app_rows.scalars().all()
+
+        jd_emb = torch.tensor(job.cv_emb)
+        r_skill_emb = torch.tensor(job.skill_emb)
+        role_emb = torch.tensor(job.exp_emb)
+
+        results = []
+        for cv in applied_cvs:
+            score = matcher.match(
+                torch.tensor(cv.cv_emb),
+                jd_emb,
+                torch.tensor(cv.skill_emb),
+                r_skill_emb,
+                torch.tensor(cv.exp_emb),
+                role_emb
+            )
+            results.append({
+                "cv_id": cv.id,
+                "candidate": cv.parsed_fields.get("personalInfo", {}),
+                **score
+            })
+
+        results.sort(key=lambda x: -x["combined_score"])
+        return results[:top_n]
+
+
+@app.delete("/delete_application/")
+async def undo_application(cv_id: UUID, job_id: UUID):
+    async with SessionLocal() as session:
+        app_row = await session.execute(
+            select(JobApplication).where(
+                JobApplication.cv_id == cv_id,
+                JobApplication.job_id == job_id
+            )
+        )
+        application = app_row.scalar_one_or_none()
+        if not application:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        await session.delete(application)
+        await session.commit()
+        return {"detail": "Application successfully withdrawn"}
+
+
