@@ -5,7 +5,7 @@ from pypdf import PdfReader
 import docx2txt
 import os
 from decouple import config
-
+import asyncio
 
 
 def extract_text_job(file_path: str) -> str:
@@ -46,7 +46,6 @@ class JobInfo(BaseModel):
     jobTitle: str
     requiredSkills: list[str]
     roles_or_responsibilities: list[str]
-    
 
 
 class JobPostingExtractor:
@@ -54,19 +53,23 @@ class JobPostingExtractor:
         api_key = config("GEMINI_API_KEY")
         self.client = genai.Client(api_key=api_key)
 
-    def extract_job_info(self, text):
-        prompt = "Parse this Job Posting to find relevant information about the job.."
+    async def extract_job_info(self, text: str):
+        prompt = "Parse this Job Posting to find relevant information about the job."
 
         try:
-            response = self.client.models.generate_content(
-                model='gemini-1.5-flash',
+            # Run Gemini call in background thread to avoid blocking FastAPI
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model="gemini-1.5-flash",
                 contents=[prompt, text],
                 config={
-                    'response_mime_type': 'application/json',
-                    'response_schema': JobInfo
+                    "response_mime_type": "application/json",
+                    "response_schema": JobInfo
                 }
             )
+
             return json.loads(response.text)
 
         except Exception as e:
             raise RuntimeError(f"Failed to extract job info: {e}")
+        

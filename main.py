@@ -85,7 +85,7 @@ async def parse_cv(user_id: str = Form(...), file: UploadFile = File(...)):
                 }
 
             # Proceed with parsing and embeddings
-            data_cv = extractor.extract_all(text_cv)
+            data_cv = await extractor.extract_all(text_cv)
             contextual_experience = []
             for exp in data_cv["experience"]:
                 if isinstance(exp, dict):
@@ -196,7 +196,7 @@ async def parse_job(company_id: str = Form(...), file: UploadFile = File(...)):
                 )
 
             #  Continue parsing
-            data_job = extractor.extract_job_info(text_job)
+            data_job = await extractor.extract_job_info(text_job)
             r_skills = data_job["requiredSkills"]
             res_text = ' '.join(data_job["roles_or_responsibilities"])
             jd_emb, req_skill_emb, role_emb = matcher.job_DOCnFIELD_level_embeddings(

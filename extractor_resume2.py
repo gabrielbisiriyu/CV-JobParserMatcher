@@ -3,8 +3,9 @@ from pydantic import BaseModel
 import json
 from pypdf import PdfReader
 import docx2txt
-import os 
+import os
 from decouple import config
+import asyncio
 
 
 def extract_text_cv(file_path: str) -> str:
@@ -68,11 +69,12 @@ class ResumeExtractor:
         api_key = config("GEMINI_API_KEY")
         self.client = genai.Client(api_key=api_key)
 
-    def extract_all(self, text):
+    async def extract_all(self, text: str):
         prompt = "Parse this resume to find relevant information about the candidate."
 
         try:
-            response = self.client.models.generate_content(
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
                 model='gemini-1.5-flash',
                 contents=[prompt, text],
                 config={
@@ -81,5 +83,6 @@ class ResumeExtractor:
                 }
             )
             return json.loads(response.text)
+
         except Exception as e:
             raise RuntimeError(f"Failed to extract resume info: {e}")
