@@ -16,6 +16,7 @@ from sqlalchemy import select, update, func
 from uuid import UUID
 import torch
 from fastapi.middleware.cors import CORSMiddleware
+import time 
 
 
 
@@ -84,8 +85,14 @@ async def parse_cv(user_id: str = Form(...), file: UploadFile = File(...)):
                     }
                 }
 
+            # ⏱️ Start timer before parsing
+            t0 = time.perf_counter()
             # Proceed with parsing and embeddings
             data_cv = await extractor.extract_all(text_cv)
+            t1 = time.perf_counter()
+            print(f"⏳ Parsing took: {t1 - t0:.2f} seconds")
+
+            # ⏱️ Start timer before embeddings
             contextual_experience = []
             for exp in data_cv["experience"]:
                 if isinstance(exp, dict):
@@ -94,7 +101,10 @@ async def parse_cv(user_id: str = Form(...), file: UploadFile = File(...)):
 
             exp_text = " ".join(contextual_experience)
             skill_list = data_cv["skills"]
+            t2 = time.perf_counter()
             cv_emb, skill_emb, exp_emb = matcher.cv_DOCnFIELD_level_embeddings(text_cv, skill_list, exp_text)
+            t3 = time.perf_counter()
+            print(f"⚙️ Embedding took: {t3 - t2:.2f} seconds")
 
             result = await session.execute(select(ParsedCV).where(ParsedCV.user_id == user_id))
             existing_cv = result.scalar_one_or_none()
@@ -195,14 +205,23 @@ async def parse_job(company_id: str = Form(...), file: UploadFile = File(...)):
                     detail="Job limit reached (10). Delete old ones to add more."
                 )
 
+            # ⏱️ Start timer before parsing
             #  Continue parsing
+            t0 = time.perf_counter()
             data_job = await extractor.extract_job_info(text_job)
+            t1 = time.perf_counter()
+            print(f"⏳ Parsing took: {t1 - t0:.2f} seconds")
+
             r_skills = data_job["requiredSkills"]
             res_text = ' '.join(data_job["roles_or_responsibilities"])
+            # ⏱️ Start timer before embeddings
+            t2 = time.perf_counter()
             jd_emb, req_skill_emb, role_emb = matcher.job_DOCnFIELD_level_embeddings(
                 text_job, r_skills, res_text
             )
-
+            t3 = time.perf_counter()
+            print(f"⚙️ Embedding took: {t3 - t2:.2f} seconds")
+            
             job_record = ParsedJob(
                 company_id=company_id,
                 text_hash=text_job_hash,

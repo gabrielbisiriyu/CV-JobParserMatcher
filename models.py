@@ -5,7 +5,6 @@ from db import Base
 
 
 
-
 class ParsedCV(Base):
     __tablename__ = "parsed_cvs"
 
