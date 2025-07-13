@@ -46,7 +46,7 @@ class CVJobMatcher:
 
     def cv_DOCnFIELD_level_embeddings(self, cv_text, skills, experience, max_words=350):
         # Encode each skill separately and average
-        skill_embeddings = self.model.encode(skills, convert_to_tensor=True,batch_size=128)
+        skill_embeddings = self.model.encode(skills, convert_to_tensor=True,batch_size=64)
         if len(skill_embeddings.shape) > 1:
             skill_embeddings = skill_embeddings.mean(dim=0)
 
@@ -54,14 +54,14 @@ class CVJobMatcher:
         experience_text =  experience
         experience_sentences = self._split_into_sentences(experience_text)
         experience_chunks = self._chunk_sentences(experience_sentences, max_words=max_words)
-        experience_embeddings = self.model.encode(experience_chunks, convert_to_tensor=True,batch_size=128)
+        experience_embeddings = self.model.encode(experience_chunks, convert_to_tensor=True,batch_size=64)
         if len(experience_embeddings.shape) > 1:
             experience_embeddings = experience_embeddings.mean(dim=0)
 
         # Chunk CV text and encode
         cv_sentences = self._split_into_sentences(cv_text)
         cv_chunks = self._chunk_sentences(cv_sentences, max_words=max_words)
-        cv_embeddings = self.model.encode(cv_chunks, convert_to_tensor=True,batch_size=128)
+        cv_embeddings = self.model.encode(cv_chunks, convert_to_tensor=True,batch_size=64)
         if len(cv_embeddings.shape) > 1:
             cv_embeddings = cv_embeddings.mean(dim=0)
 
@@ -69,7 +69,7 @@ class CVJobMatcher:
 
     def job_DOCnFIELD_level_embeddings(self, job_text, required_skills, responsibilities, max_words=300):
         # Encode each required skill and average
-        required_skill_embeddings = self.model.encode(required_skills, convert_to_tensor=True,batch_size=128)
+        required_skill_embeddings = self.model.encode(required_skills, convert_to_tensor=True,batch_size=64)
         if len(required_skill_embeddings.shape) > 1:
             required_skill_embeddings = required_skill_embeddings.mean(dim=0)
 
@@ -77,14 +77,14 @@ class CVJobMatcher:
         role_text =  responsibilities
         role_sentences = self._split_into_sentences(role_text)
         role_chunks = self._chunk_sentences(role_sentences, max_words=max_words)
-        role_embeddings = self.model.encode(role_chunks, convert_to_tensor=True,batch_size=128)
+        role_embeddings = self.model.encode(role_chunks, convert_to_tensor=True,batch_size=64)
         if len(role_embeddings.shape) > 1:
             role_embeddings = role_embeddings.mean(dim=0)
 
         # Chunk job text and encode
         jd_sentences = self._split_into_sentences(job_text)
         jd_chunks = self._chunk_sentences(jd_sentences, max_words=max_words)
-        jd_embeddings = self.model.encode(jd_chunks, convert_to_tensor=True,batch_size=128)
+        jd_embeddings = self.model.encode(jd_chunks, convert_to_tensor=True,batch_size=64)
         if len(jd_embeddings.shape) > 1:
             jd_embeddings = jd_embeddings.mean(dim=0)
 
