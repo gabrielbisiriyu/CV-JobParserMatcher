@@ -1,16 +1,14 @@
-from google import genai
 from pydantic import BaseModel
 import json
 from pypdf import PdfReader
 import docx2txt
-import os
 from decouple import config
-import asyncio
 import json
 import openai
 from pydantic import BaseModel
 from typing import List
 
+#import asyncio
 
 
 
@@ -40,12 +38,7 @@ def extract_text_cv(file_path: str) -> str:
         raise RuntimeError(f"Failed to extract text from {file_path}: {e}")
 
 
-import asyncio
-import json
-import openai
-from pydantic import BaseModel
-from decouple import config
-from typing import List
+
 
 class PersonalInformation(BaseModel):
     name: str

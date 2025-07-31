@@ -48,5 +48,3 @@ class JobApplication(Base):
     __table_args__ = (
         UniqueConstraint("job_id", "cv_id", name="uq_job_cv_application"),
     )  
-
-
