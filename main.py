@@ -44,7 +44,9 @@ def load_matcher():
     print("CVJobMatcher loaded globally on startup")
 
 
-
+@app.get("/")
+def health_check():
+    return {"status": "ok"}
 
 
 
