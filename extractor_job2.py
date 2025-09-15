@@ -80,7 +80,8 @@ class JobPostingExtractor:
                 },
                 "roles_or_responsibilities": {
                     "type": "array",
-                    "items": {"type": "string"}
+                    "items": { "type": "string",
+                "description": "One individual skill or technology only, not a sentence"}
                 }
             },
             "required": ["companyInfo", "jobTitle", "requiredSkills", "roles_or_responsibilities"],
@@ -92,7 +93,9 @@ class JobPostingExtractor:
                 Extract the following information and return it in the specified JSON format:
                 - Company information (name, location, website, phone number)
                 - Job title
-                - Required skills (technical skills, qualifications, experience requirements)
+                -  Required skills: ONLY atomic, individual skills or technologies.
+                     Example: ["JavaScript", "React", "MongoDB", "CI/CD"].
+                     Do NOT include years of experience, full sentences, or descriptions.
                 - Roles and responsibilities (job duties, what the person will do)
 
                 Important guidelines:
@@ -131,75 +134,3 @@ class JobPostingExtractor:
             raise RuntimeError(f"Failed to extract job info: {e}")
 
 
-# Alternative version using function calling (if structured outputs aren't available)
-class JobPostingExtractorFunctionCalling:
-    def __init__(self):
-        api_key = config("OPENAI_API_KEY")
-        self.client = openai.AsyncOpenAI(api_key=api_key)
-
-    async def extract_job_info(self, text: str):
-        functions = [
-            {
-                "name": "extract_job_info",
-                "description": "Extract structured information from a job posting",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "companyInfo": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "companyName": {"type": "string"},
-                                    "location": {"type": "string"},
-                                    "website": {"type": "string"},
-                                    "telephoneNumber": {"type": "string"}
-                                }
-                            }
-                        },
-                        "jobTitle": {"type": "string"},
-                        "requiredSkills": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        },
-                        "roles_or_responsibilities": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        }
-                    },
-                    "required": ["companyInfo", "jobTitle", "requiredSkills", "roles_or_responsibilities"]
-                }
-            }
-        ]
-
-        prompt = f"""Parse this Job Posting to find relevant information about the job.
-
-                    Extract all available information including:
-                    - Company details (name, location, website, phone number)
-                    - Job title/position
-                    - Required skills and qualifications
-                    - Job responsibilities and duties
-
-                    Use empty strings for missing information and empty arrays for missing lists.
-
-                    Job posting text:
-                    {text}"""
-
-        try:
-            response = await self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are a job posting parsing assistant."},
-                    {"role": "user", "content": prompt}
-                ],
-                functions=functions,
-                function_call={"name": "extract_job_info"},
-                temperature=0.1,
-                max_tokens=4000
-            )
-            
-            function_call = response.choices[0].message.function_call
-            return json.loads(function_call.arguments)
-
-        except Exception as e:
-            raise RuntimeError(f"Failed to extract job info: {e}")
